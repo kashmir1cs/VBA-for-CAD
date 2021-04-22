@@ -1,96 +1,231 @@
 Option Explicit
 
-Function loadFileToList(filePath)
-'지정된 텍스트 파일을 1줄씩 읽어 배열로 반환한다.
-    Dim line As String
-    Dim fileNum As Integer
-    Dim element As Variant
-    Dim list() As String '동적 배열 선언
-    Dim i As Long: i = 0
-    
-    fileNum = FreeFile()
-    Open filePath For Input Access Read As #fileNum
-    
-    Do While Not EOF(fileNum)
-        Line Input #fileNum, line
-        If line <> "" Then
-            ReDim Preserve list(i)
-            list(i) = line
-            i = i + 1
-        End If
-    Loop
-    
-    Close #fileNum
-    loadFileToList = list
-End Function
 
-Function allDwgTextToList()
-'DWG 파일 안의 모든 텍스트 데이터를 배열에 저장한다.
-    Dim mSpaceObj As AcadObject
-    Dim count As Integer: count = ThisDrawing.ModelSpace.count
-    Dim i As Long
-    Dim j As Long: j = 0
-    Dim text As String
-    Dim textList() As String '동적 배열 선언
-    
-    For i = 0 To count - 1
-        Set mSpaceObj = ThisDrawing.ModelSpace.Item(i)
-        On Error Resume Next '텍스트 속성이 없으면 그냥 무시
-        text = mSpaceObj.TextString
-        If text <> "" Then
-            ReDim Preserve textList(j)
-            textList(j) = text
-            j = j + 1
-        End If
-    Next
-
-    allDwgTextToList = textList
-End Function
-
-Sub listToFile(textList, filePath)
-'배열을 받아, 그 배열의 내용을 지정된 파일에 기록한다.
-    Dim fileNum As Integer
-    Dim element As Variant
-    
-    fileNum = FreeFile()
-    Open filePath For Append As #fileNum
-    
-    For Each element In textList
-        Print #fileNum, Chr(9); element
-    Next
-    
-    Write #fileNum, '빈 줄 추가
-    Close #fileNum
-    
-End Sub
+Public dwgList As Collection
 
 Sub main()
-    '여기서 각 필요 파일 이름을 수동으로 지정
-    Dim dwgFileListPath As String: dwgFileListPath = "Z:\WORK\DWGlist.txt"
-    Dim resultFilePath As String: resultFilePath = "Z:\WORK\DWGtext.txt"
+'변수 설정
+    Dim dwgName As Variant
+    Dim i As Long: i = 0
+    Dim readOnly As Boolean: readOnly = False
+    Dim filesystem As Object
+    Dim hostFolder As String
+    Dim outputFolder As String
+    Dim prefix As String
+    prefix = "변환"
+    Set dwgList = New Collection
     
-    Dim fileList() As String
-    Dim element As Variant
-    Dim fileNum As Integer
-    Dim ReadOnly As Boolean
+    hostFolder = "C:\Users\User\Desktop\IC"
+    outputFolder = "C:\"
+
+'실행창에 진행사항 표시
     
-    '파일 목록 불러오기
-    fileList = loadFileToList(dwgFileListPath)
+    Debug.Print "ND → OD Size 변환 작업 시작"
+
+'지정폴더 File 연다.
+    Set filesystem = CreateObject("scripting.filesystemobject")
+    doFolder filesystem.getfolder(hostFolder)
     
-    For Each element In fileList
-        On Error Resume Next 'DWG 파일 열다가 에러가 나도 그냥 다음 파일로 넘어가기
-        AutoCAD.Documents.Open element, ReadOnly = True
-        
-        '텍스트 내용이 있는 파일 이름 적어주기
-        fileNum = FreeFile()
-        Open resultFilePath For Append As #fileNum
-        Write #fileNum, element
-        Close #fileNum
-        
-        '파일을 실제로 열어, 그 중 텍스트 부분을 추출한다
-        listToFile allDwgTextToList, resultFilePath
-        
-        AutoCAD.Documents.Close
+'2단계 시작 표시
+    Debug.Print ""
+    Debug.Print "변환작업 시작"
+    
+For Each dwgName In dwgList
+    
+    i = i + 1
+    Debug.Print i & "/" & dwgList.Count
+    
+    On Error Resume Next
+    'CAD도면 Open
+    AutoCAD.Documents.Open dwgName
+    '작성한 Procedure 호출
+    Call text_change
+    Call text_change2
+    Call text_delete("delete text")
+    Call text_replace("Old Text", "New Text")
+
+    AutoCAD.Documents.Save
+    Debug.Print "변환완료"
+    AutoCAD.Documents.Close
+    
+Next
+
+End Sub
+Sub doFolder(folder)
+'각 디렉터리와 서브 디렉터리를 재귀적으로 순회하기 위한 서브루틴.
+    On Error Resume Next '오류 발생시 다음 폴더로 넘어감.
+    
+    Dim subFolder As Variant
+    For Each subFolder In folder.subfolders
+        doFolder subFolder
+    Next
+    
+' 순회 과정에서 DWG 파일이 발견되면 경로 컬렉션에 경로를 추가한다.
+    Dim file As Variant
+    For Each file In folder.Files
+    'Like 연산자를 사용하여 dwg가 들어있는 파일은 컬렉션에 추가함
+        If LCase(file.Name) Like "*.dwg" Then
+            dwgList.Add file.Path
+            Debug.Print file.Path '파일 경로를 debug.print 함수를 이용해 화면에 출력
+        End If
     Next
 End Sub
-AutoCAD에서 VBA를 이용해서 여러 DWG 파일에서 한번에 텍스트 내용 추출하기 - 인터넷 / 소프트웨어 - 기글하드웨어 : https://gigglehd.com/gg/?mid=soft&document_srl=379801
+
+
+
+Sub text()
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    For Each item In ThisDrawing.ModelSpace
+        On Error Resume Next 
+        'text 초기화
+        text = ""
+        Set mSpaceObj = item
+        'text에서 find text를 찾으면 컬렉션 개체에 추가
+        text = mSpaceObj.textString
+        If InStr(text, "find text") Then
+            result.Add text
+        End If
+    Next
+    Dim i As Integer
+     
+    For i = 1 To result.Count
+     Debug.Print i
+     Debug.Print Chr(10) 'enter키 입력과 동일 
+     Debug.Print result(i)
+     Debug.Print Chr(10)
+    Next
+    
+    
+    
+End Sub
+
+
+Sub text_change()
+    'old text -> new text로 변경하는 procedure
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    For Each item In ThisDrawing.ModelSpace
+        '반복문 시작, item의 textString 속성 읽은 후 text 변수에 저장 
+        On Error Resume Next '에러가 발생해도 다음으로 진행
+        text = "" 'text 변수는 초기화 
+        Set mSpaceObj = item
+        text = mSpaceObj.textString
+        ' if elseif 반복을 통해 필요한 텍스트로 변경
+        If InStr(text, "old text1") Then
+            
+            item.textString = Replace(text, "old text1", "new text1")
+            
+        ElseIf InStr(text, "old text2") Then
+            item.textString = Replace(text, "old text2", "new text2")
+             
+        End If
+
+
+    Next
+ 
+Sub text_change2()
+
+Debug.Print "진행 Procedure 설명"
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    For Each item In ThisDrawing.ModelSpace
+        On Error Resume Next
+        text = ""
+        Set mSpaceObj = item 'Modelspace상의 객체 item을 mSpaceObj에 할당
+        
+        text = mSpaceObj.textString 'mSpaceObj의 textString을 text에 할당
+        If text = "old text1" Then
+            
+            item.textString = Replace(text, "old text1", "new text2" & Chr(34)) '특수 문자 ascii code값 이용하여 출력
+        
+        ElseIf InStr(text, "old text2") Then
+            
+            item.textString = Replace(text, "old text2", "new text2" & Chr(34))
+            
+        End If
+
+
+    Next
+ 
+End Sub
+
+Sub text_delete(strText As String)
+'Text 삭제
+    Debug.Print strText & "삭제"
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    For Each item In ThisDrawing.ModelSpace
+        On Error Resume Next
+        text = ""
+        Set mSpaceObj = item
+            
+        text = mSpaceObj.textString
+        If text = strText Then
+            
+            item.textString = "" 'textString 삭제
+            
+       
+            
+        End If
+
+
+    Next
+ 
+End Sub
+
+Sub text_replace(strSearch As String, strChange As String)
+'Text 삭제 혹은 변경하는 함수
+Debug.Print strSearch & "→" & strChange
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    For Each item In ThisDrawing.ModelSpace
+        On Error Resume Next
+        text = ""
+        Set mSpaceObj = item
+        text = mSpaceObj.textString
+        
+        If InStr(text, strSearch) Then
+            
+            item.textString = Replace(text, strSearch, strChange)
+       
+            
+        End If
+
+
+    Next
+ 
+End Sub
+
+
+Function dwgTextFind(findingText) As Collection
+'DWG 파일 내의 모든 텍스트에서 원하는 부분이 있는지 찾아, _
+'조건이 맞는 모든 텍스트를 모은 컬렉션을 반환한다.
+    Dim mSpaceObj As AcadObject
+    Dim item As Variant
+    Dim text As String
+    Dim result As New Collection '한번에 선언 및 생성 - 초기화
+    
+    For Each item In ThisDrawing.ModelSpace
+        On Error Resume Next '텍스트 스트링이 없으면 그냥 지나감
+        text = "" '초기화
+        Set mSpaceObj = item
+        text = mSpaceObj.textString
+        If InStr(LCase(text), LCase(findingText)) Then '대소문자 구분하지 않음!
+            result.Add text
+        End If
+    Next
+    
+    Set dwgTextFind = result
+End Function
+
